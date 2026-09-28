@@ -1,0 +1,244 @@
+/* -------------------------------------------------
+   MAIN PAGE
+------------------------------------------------- */
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #fdf8f5;
+  color: #4a4458;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+
+/* -------------------------------------------------
+   HEADER
+------------------------------------------------- */
+
+header {
+  background: #cdb4db;
+  color: #3f3450;
+  padding: 22px 35px;
+  box-shadow: 0 3px 10px rgba(120, 90, 140, 0.12);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 27px;
+}
+
+header p {
+  margin-top: 7px;
+  color: #5c5068;
+}
+
+
+/* -------------------------------------------------
+   MAIN CONTENT
+------------------------------------------------- */
+
+main {
+  padding: 25px 35px;
+}
+
+
+/* -------------------------------------------------
+   TWO COLUMN DASHBOARD
+------------------------------------------------- */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+
+/* -------------------------------------------------
+   CARDS
+------------------------------------------------- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.card {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 15px;
+  border: 1px solid #eadfea;
+  box-shadow: 0 4px 12px rgba(120, 90, 140, 0.10);
+  transition: 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 18px rgba(120, 90, 140, 0.15);
+}
+
+.card h3 {
+  margin-top: 0;
+  color: #75647f;
+  font-size: 16px;
+}
+
+.card p {
+  font-size: 26px;
+  font-weight: bold;
+  margin-bottom: 0;
+  color: #51435f;
+}
+
+
+/* -------------------------------------------------
+   INFORMATION SECTIONS
+------------------------------------------------- */
+
+.info {
+  background: #ffffff;
+  margin-top: 20px;
+  padding: 22px;
+  border-radius: 15px;
+  border: 1px solid #eadfea;
+  box-shadow: 0 4px 12px rgba(120, 90, 140, 0.08);
+}
+
+.info h2 {
+  color: #665374;
+  margin-top: 0;
+}
+
+
+/* -------------------------------------------------
+   TABLE
+------------------------------------------------- */
+
+.table-container {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+  background: #ffffff;
+}
+
+th,
+td {
+  padding: 12px;
+  text-align: center;
+  border-bottom: 1px solid #eee5ef;
+}
+
+th {
+  background: #b8c9e8;
+  color: #3f4d68;
+  font-weight: bold;
+}
+
+td {
+  background: #ffffff;
+  color: #514b5b;
+}
+
+tr:hover td {
+  background: #faf5fb;
+}
+
+
+/* -------------------------------------------------
+   BUTTONS
+------------------------------------------------- */
+
+button {
+  padding: 7px 12px;
+  margin: 3px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #a8c7d9;
+  color: #354955;
+  font-weight: 600;
+  transition: 0.2s ease;
+}
+
+button:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+
+/* -------------------------------------------------
+   RANGE SLIDER
+------------------------------------------------- */
+
+input[type="range"] {
+  width: 100px;
+  margin-top: 8px;
+  accent-color: #b9a7d3;
+}
+
+
+/* -------------------------------------------------
+   INPUTS
+------------------------------------------------- */
+
+input {
+  border: 1px solid #ddd0e2;
+  border-radius: 7px;
+  padding: 8px;
+  background: #fffdfd;
+  color: #4a4458;
+}
+
+input:focus {
+  outline: none;
+  border-color: #b9a7d3;
+}
+
+
+/* -------------------------------------------------
+   RESPONSIVE
+------------------------------------------------- */
+
+@media (max-width: 900px) {
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+
+@media (max-width: 600px) {
+
+  main {
+    padding: 15px;
+  }
+
+  header {
+    padding: 20px;
+  }
+
+  header h1 {
+    font-size: 22px;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    padding: 18px;
+  }
+}

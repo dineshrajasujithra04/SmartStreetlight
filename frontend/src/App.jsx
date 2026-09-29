@@ -1,175 +1,189 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import { useEffect, useRef, useState } from "react"
 
-const API = "https://smartstreetlight-backend.onrender.com";
+const API = "https://smartstreetlight-backend.onrender.com"
 
 function App() {
-  const [streetlights, setStreetlights] = useState([]);
-  const [energySaved, setEnergySaved] = useState(0);
-  const [powerHistory, setPowerHistory] = useState([]);
-  const [energyHistory, setEnergyHistory] = useState([]);
-  const [simulationRunning, setSimulationRunning] = useState(false);
-  const [backendError, setBackendError] = useState("");
-  const simulationRef = useRef(null);
-  const lastTime = useRef(Date.now());
+  const [streetlights, setStreetlights] = useState([])
+  const [connected, setConnected] = useState(false)
+  const [error, setError] = useState("")
+  const [simulationRunning, setSimulationRunning] = useState(false)
+  const [energySaved, setEnergySaved] = useState(0)
+  const simulationRef = useRef(null)
+  const lastTime = useRef(Date.now())
 
   // ---------------- LOAD DATA ----------------
   const loadStreetlights = async () => {
     try {
-      const response = await fetch(`${API}/streetlights`);
+      const response = await fetch(`${API}/streetlights`)
 
       if (!response.ok) {
-        throw new Error(`Backend returned ${response.status}`);
+        throw new Error(`Backend error: ${response.status}`)
       }
 
-      const data = await response.json();
-      setStreetlights(data);
-      setBackendError("");
-    } catch (error) {
-      console.error("Backend connection error:", error);
-      setBackendError(
-        "Backend is not connected. Please check the Render backend deployment."
-      );
+      const data = await response.json()
+
+      setStreetlights(Array.isArray(data) ? data : [])
+      setConnected(true)
+      setError("")
+    } catch (err) {
+      console.error(err)
+      setConnected(false)
+      setError("Backend is not connected. Please check the Render backend.")
     }
-  };
+  }
 
   useEffect(() => {
-    loadStreetlights();
-  }, []);
+    loadStreetlights()
+  }, [])
 
-  // ---------------- CALCULATIONS ----------------
-  const totalLights = streetlights.length;
+  // ---------------- UPDATE LIGHT ----------------
+  const updateLight = async (id, status, brightness) => {
+    try {
+      const response = await fetch(`${API}/streetlights/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status,
+          brightness,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Update failed")
+      }
+
+      await loadStreetlights()
+    } catch (err) {
+      console.error(err)
+      setError("Unable to update streetlight.")
+    }
+  }
+
+  // ---------------- AUTO MODE ----------------
+  const autoMode = async (id) => {
+    try {
+      const response = await fetch(`${API}/streetlights/${id}/auto`, {
+        method: "PUT",
+      })
+
+      if (!response.ok) {
+        throw new Error("Auto mode failed")
+      }
+
+      await loadStreetlights()
+    } catch (err) {
+      console.error(err)
+      setError("Auto mode is not available.")
+    }
+  }
+
+  // ---------------- SIMULATE ----------------
+  const simulate = async (id) => {
+    try {
+      const response = await fetch(`${API}/streetlights/${id}/simulate`, {
+        method: "PUT",
+      })
+
+      if (!response.ok) {
+        throw new Error("Simulation failed")
+      }
+
+      await loadStreetlights()
+    } catch (err) {
+      console.error(err)
+      setError("Simulation failed.")
+    }
+  }
+
+  // ---------------- AUTO SIMULATION ----------------
+  const startSimulation = () => {
+    if (simulationRunning) return
+
+    setSimulationRunning(true)
+
+    simulationRef.current = setInterval(async () => {
+      try {
+        const currentLights = [...streetlights]
+
+        await Promise.all(
+          currentLights.map((light) =>
+            fetch(`${API}/streetlights/${light.id}/simulate`, {
+              method: "PUT",
+            })
+          )
+        )
+
+        await loadStreetlights()
+      } catch (err) {
+        console.error(err)
+      }
+    }, 5000)
+  }
+
+  const stopSimulation = () => {
+    if (simulationRef.current) {
+      clearInterval(simulationRef.current)
+      simulationRef.current = null
+    }
+
+    setSimulationRunning(false)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (simulationRef.current) {
+        clearInterval(simulationRef.current)
+      }
+    }
+  }, [])
+
+  // ---------------- ENERGY CALCULATION ----------------
+  useEffect(() => {
+    if (streetlights.length === 0) return
+
+    const now = Date.now()
+    const hours = (now - lastTime.current) / 3600000
+    lastTime.current = now
+
+    const baseline =
+      streetlights.filter((light) => !light.fault).length * 45
+
+    const current = streetlights.reduce(
+      (sum, light) => sum + Number(light.power_usage || 0),
+      0
+    )
+
+    const saved = Math.max(0, baseline - current)
+
+    setEnergySaved((old) => old + (saved * hours) / 1000)
+  }, [streetlights])
+
+  // ---------------- DASHBOARD ----------------
+  const total = streetlights.length
 
   const lightsOn = streetlights.filter(
     (light) => light.status === "ON"
-  ).length;
+  ).length
 
   const lightsOff = streetlights.filter(
     (light) => light.status === "OFF"
-  ).length;
+  ).length
 
-  const faultyLights = streetlights.filter(
+  const faulty = streetlights.filter(
     (light) => light.fault === true
-  ).length;
+  ).length
 
-  const powerUsage = streetlights.reduce(
+  const power = streetlights.reduce(
     (sum, light) => sum + Number(light.power_usage || 0),
     0
-  );
+  )
 
-  const baselinePower =
-    streetlights.filter((light) => !light.fault).length * 45;
+  const baseline =
+    streetlights.filter((light) => !light.fault).length * 45
 
-  const powerSaved = Math.max(0, baselinePower - powerUsage);
-
-  // ---------------- POWER HISTORY ----------------
-  useEffect(() => {
-    if (!streetlights.length) return;
-
-    setPowerHistory((previous) => [
-      ...previous,
-      {
-        time: new Date().toLocaleTimeString(),
-        power: Number(powerUsage.toFixed(1)),
-      },
-    ].slice(-10));
-  }, [streetlights]);
-
-  // ---------------- ENERGY SAVED ----------------
-  useEffect(() => {
-    if (!streetlights.length) return;
-
-    const now = Date.now();
-    const hours = (now - lastTime.current) / 3600000;
-    lastTime.current = now;
-
-    const saved = (powerSaved * hours) / 1000;
-
-    setEnergySaved((previous) => previous + saved);
-
-    setEnergyHistory((previous) => {
-      const oldEnergy =
-        previous.length > 0
-          ? previous[previous.length - 1].energy
-          : 0;
-
-      return [
-        ...previous,
-        {
-          time: new Date().toLocaleTimeString(),
-          energy: Number((oldEnergy + saved).toFixed(6)),
-        },
-      ].slice(-10);
-    });
-  }, [streetlights]);
-
-  // ---------------- API ACTION ----------------
-  const action = async (id, endpoint, options = {}) => {
-    try {
-      const response = await fetch(
-        `${API}/streetlights/${id}${endpoint}`,
-        options
-      );
-
-      if (!response.ok) {
-        throw new Error(`Action failed: ${response.status}`);
-      }
-
-      await loadStreetlights();
-    } catch (error) {
-      console.error("Action error:", error);
-      setBackendError("Backend request failed. Please check Render.");
-    }
-  };
-
-  // ---------------- MANUAL CONTROL ----------------
-  const updateLight = (id, status, brightness) => {
-    action(id, "", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        status,
-        brightness,
-      }),
-    });
-  };
-
-  // ---------------- START SIMULATION ----------------
-  const startSimulation = () => {
-    if (simulationRunning || !streetlights.length) return;
-
-    setSimulationRunning(true);
-
-    simulationRef.current = setInterval(() => {
-      streetlights.forEach((light) => {
-        action(light.id, "/simulate", {
-          method: "PUT",
-        });
-      });
-    }, 5000);
-  };
-
-  // ---------------- STOP SIMULATION ----------------
-  const stopSimulation = () => {
-    clearInterval(simulationRef.current);
-    simulationRef.current = null;
-    setSimulationRunning(false);
-  };
-
-  useEffect(() => {
-    return () => clearInterval(simulationRef.current);
-  }, []);
+  const powerSaved = Math.max(0, baseline - power)
 
   // ---------------- UI ----------------
   return (
@@ -182,19 +196,26 @@ function App() {
 
       <main>
 
-        {/* BACKEND STATUS */}
-        {backendError && (
-          <div className="backend-error">
-            <strong>Backend Connection Error</strong>
-            <p>{backendError}</p>
-            <button onClick={loadStreetlights}>
-              RETRY CONNECTION
-            </button>
-          </div>
-        )}
+        {/* CONNECTION */}
+        <section className="info">
+          {connected ? (
+            <p>
+              🟢 <strong>Backend Connected</strong>
+            </p>
+          ) : (
+            <>
+              <h2>Backend Connection Error</h2>
+              <p>{error}</p>
+
+              <button onClick={loadStreetlights}>
+                RETRY CONNECTION
+              </button>
+            </>
+          )}
+        </section>
 
         {/* SIMULATION */}
-        <section className="info simulation-control">
+        <section className="info">
           <button onClick={startSimulation}>
             START AUTO SIMULATION
           </button>
@@ -212,58 +233,57 @@ function App() {
         </section>
 
         {/* DASHBOARD */}
-        <section className="info">
-          <h2>Dashboard</h2>
+        <h2>Dashboard</h2>
 
-          <div className="cards">
+        <div className="cards">
 
-            <div className="card">
-              <h3>Total Streetlights</h3>
-              <p>{totalLights}</p>
-            </div>
-
-            <div className="card">
-              <h3>Lights ON</h3>
-              <p>{lightsOn}</p>
-            </div>
-
-            <div className="card">
-              <h3>Lights OFF</h3>
-              <p>{lightsOff}</p>
-            </div>
-
-            <div className="card">
-              <h3>Faulty Lights</h3>
-              <p>{faultyLights}</p>
-            </div>
-
-            <div className="card">
-              <h3>Power Usage</h3>
-              <p>{powerUsage.toFixed(1)} W</p>
-            </div>
-
-            <div className="card">
-              <h3>Energy Saved</h3>
-              <p>{energySaved.toFixed(4)} kWh</p>
-            </div>
-
+          <div className="card">
+            <h3>Total Streetlights</h3>
+            <p>{total}</p>
           </div>
-        </section>
 
-        {/* ENERGY SUMMARY */}
+          <div className="card">
+            <h3>Lights ON</h3>
+            <p>{lightsOn}</p>
+          </div>
+
+          <div className="card">
+            <h3>Lights OFF</h3>
+            <p>{lightsOff}</p>
+          </div>
+
+          <div className="card">
+            <h3>Faulty Lights</h3>
+            <p>{faulty}</p>
+          </div>
+
+          <div className="card">
+            <h3>Power Usage</h3>
+            <p>{power.toFixed(1)} W</p>
+          </div>
+
+          <div className="card">
+            <h3>Energy Saved</h3>
+            <p>{energySaved.toFixed(4)} kWh</p>
+          </div>
+
+        </div>
+
+        {/* ENERGY */}
         <section className="info">
+
           <h2>Energy Saving Summary</h2>
 
           <div className="cards">
 
             <div className="card">
               <h3>Baseline Power</h3>
-              <p>{baselinePower.toFixed(1)} W</p>
+              <p>{baseline.toFixed(1)} W</p>
             </div>
 
             <div className="card">
               <h3>Current Power</h3>
-              <p>{powerUsage.toFixed(1)} W</p>
+              <p>{power.toFixed(1)} W</p>
             </div>
 
             <div className="card">
@@ -274,79 +294,24 @@ function App() {
           </div>
 
           <p>
-            Baseline assumes each non-faulty streetlight operates
-            at 100% brightness using 45 W.
+            Baseline assumes each non-faulty streetlight
+            operates at 100% brightness using 45 W.
           </p>
+
         </section>
 
-        {/* POWER GRAPH */}
+        {/* STREETLIGHTS */}
         <section className="info">
-          <h2>Power Usage Monitoring</h2>
 
-          {powerHistory.length === 0 ? (
-            <p>
-              Start the simulation to collect power usage data.
-            </p>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={powerHistory}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="power"
-                  name="Power Usage (W)"
-                  strokeWidth={3}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </section>
-
-        {/* ENERGY GRAPH */}
-        <section className="info">
-          <h2>Energy Saved Monitoring</h2>
-
-          {energyHistory.length === 0 ? (
-            <p>
-              Start the simulation to collect energy-saving data.
-            </p>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={energyHistory}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="energy"
-                  name="Energy Saved (kWh)"
-                  strokeWidth={3}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </section>
-
-        {/* STREETLIGHT MONITORING */}
-        <section className="info">
           <h2>Streetlight Monitoring</h2>
 
           {streetlights.length === 0 ? (
-            <p>
-              {backendError
-                ? "Unable to load streetlights."
-                : "Loading streetlights..."}
-            </p>
+            <p>No streetlights found.</p>
           ) : (
             <div className="table-container">
 
               <table>
+
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -361,7 +326,9 @@ function App() {
                 </thead>
 
                 <tbody>
+
                   {streetlights.map((light) => (
+
                     <tr key={light.id}>
 
                       <td>{light.id}</td>
@@ -391,7 +358,9 @@ function App() {
                             updateLight(
                               light.id,
                               "ON",
-                              light.brightness || 100
+                              light.brightness === 0
+                                ? 100
+                                : light.brightness
                             )
                           }
                         >
@@ -412,11 +381,7 @@ function App() {
 
                         <button
                           onClick={() =>
-                            action(
-                              light.id,
-                              "/auto",
-                              { method: "PUT" }
-                            )
+                            autoMode(light.id)
                           }
                         >
                           AUTO
@@ -424,41 +389,11 @@ function App() {
 
                         <button
                           onClick={() =>
-                            action(
-                              light.id,
-                              "/simulate",
-                              { method: "PUT" }
-                            )
+                            simulate(light.id)
                           }
                         >
                           SIMULATE
                         </button>
-
-                        {light.fault ? (
-                          <button
-                            onClick={() =>
-                              action(
-                                light.id,
-                                "/repair",
-                                { method: "PUT" }
-                              )
-                            }
-                          >
-                            REPAIR
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() =>
-                              action(
-                                light.id,
-                                "/fault",
-                                { method: "PUT" }
-                              )
-                            }
-                          >
-                            SIMULATE FAULT
-                          </button>
-                        )}
 
                         <br />
 
@@ -477,18 +412,24 @@ function App() {
                         />
 
                       </td>
+
                     </tr>
+
                   ))}
+
                 </tbody>
+
               </table>
 
             </div>
           )}
+
         </section>
 
       </main>
+
     </div>
-  );
+  )
 }
 
-export default App;
+export default App

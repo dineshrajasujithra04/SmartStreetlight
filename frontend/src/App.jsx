@@ -7,7 +7,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from "recharts";
 
 const API = "https://smartstreetlight-backend.onrender.com";
@@ -18,18 +18,27 @@ function App() {
   const [powerHistory, setPowerHistory] = useState([]);
   const [energyHistory, setEnergyHistory] = useState([]);
   const [simulationRunning, setSimulationRunning] = useState(false);
+  const [backendError, setBackendError] = useState("");
   const simulationRef = useRef(null);
   const lastTime = useRef(Date.now());
 
-  // Load streetlights
+  // ---------------- LOAD DATA ----------------
   const loadStreetlights = async () => {
     try {
-      const res = await fetch(`${API}/streetlights`);
-      if (!res.ok) throw new Error("Backend error");
-      const data = await res.json();
+      const response = await fetch(`${API}/streetlights`);
+
+      if (!response.ok) {
+        throw new Error(`Backend returned ${response.status}`);
+      }
+
+      const data = await response.json();
       setStreetlights(data);
+      setBackendError("");
     } catch (error) {
       console.error("Backend connection error:", error);
+      setBackendError(
+        "Backend is not connected. Please check the Render backend deployment."
+      );
     }
   };
 
@@ -37,50 +46,45 @@ function App() {
     loadStreetlights();
   }, []);
 
-  // Dashboard calculations
+  // ---------------- CALCULATIONS ----------------
   const totalLights = streetlights.length;
 
   const lightsOn = streetlights.filter(
-    l => l.status === "ON"
+    (light) => light.status === "ON"
   ).length;
 
   const lightsOff = streetlights.filter(
-    l => l.status === "OFF"
+    (light) => light.status === "OFF"
   ).length;
 
   const faultyLights = streetlights.filter(
-    l => l.fault === true
+    (light) => light.fault === true
   ).length;
 
   const powerUsage = streetlights.reduce(
-    (sum, l) => sum + Number(l.power_usage || 0),
+    (sum, light) => sum + Number(light.power_usage || 0),
     0
   );
 
   const baselinePower =
-    streetlights.filter(l => !l.fault).length * 45;
+    streetlights.filter((light) => !light.fault).length * 45;
 
-  const powerSaved = Math.max(
-    0,
-    baselinePower - powerUsage
-  );
+  const powerSaved = Math.max(0, baselinePower - powerUsage);
 
-  // Power history
+  // ---------------- POWER HISTORY ----------------
   useEffect(() => {
     if (!streetlights.length) return;
 
-    const time = new Date().toLocaleTimeString();
-
-    setPowerHistory(prev => [
-      ...prev,
+    setPowerHistory((previous) => [
+      ...previous,
       {
-        time,
-        power: Number(powerUsage.toFixed(1))
-      }
+        time: new Date().toLocaleTimeString(),
+        power: Number(powerUsage.toFixed(1)),
+      },
     ].slice(-10));
   }, [streetlights]);
 
-  // Energy calculation
+  // ---------------- ENERGY SAVED ----------------
   useEffect(() => {
     if (!streetlights.length) return;
 
@@ -88,72 +92,75 @@ function App() {
     const hours = (now - lastTime.current) / 3600000;
     lastTime.current = now;
 
-    const saved =
-      (powerSaved * hours) / 1000;
+    const saved = (powerSaved * hours) / 1000;
 
-    setEnergySaved(prev => prev + saved);
+    setEnergySaved((previous) => previous + saved);
 
-    setEnergyHistory(prev => {
-      const previous =
-        prev.length ? prev[prev.length - 1].energy : 0;
+    setEnergyHistory((previous) => {
+      const oldEnergy =
+        previous.length > 0
+          ? previous[previous.length - 1].energy
+          : 0;
 
       return [
-        ...prev,
+        ...previous,
         {
           time: new Date().toLocaleTimeString(),
-          energy: Number(
-            (previous + saved).toFixed(6)
-          )
-        }
+          energy: Number((oldEnergy + saved).toFixed(6)),
+        },
       ].slice(-10);
     });
   }, [streetlights]);
 
-  // API action
+  // ---------------- API ACTION ----------------
   const action = async (id, endpoint, options = {}) => {
     try {
-      await fetch(
+      const response = await fetch(
         `${API}/streetlights/${id}${endpoint}`,
         options
       );
+
+      if (!response.ok) {
+        throw new Error(`Action failed: ${response.status}`);
+      }
+
       await loadStreetlights();
     } catch (error) {
       console.error("Action error:", error);
+      setBackendError("Backend request failed. Please check Render.");
     }
   };
 
-  // Manual control
-  const updateLight = (id, status, brightness) =>
+  // ---------------- MANUAL CONTROL ----------------
+  const updateLight = (id, status, brightness) => {
     action(id, "", {
       method: "PUT",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         status,
-        brightness
-      })
+        brightness,
+      }),
     });
+  };
 
-  // Automatic simulation
+  // ---------------- START SIMULATION ----------------
   const startSimulation = () => {
-    if (simulationRunning) return;
+    if (simulationRunning || !streetlights.length) return;
 
     setSimulationRunning(true);
 
-    simulationRef.current = setInterval(async () => {
-      await Promise.all(
-        streetlights.map(light =>
-          action(light.id, "/simulate", {
-            method: "PUT"
-          })
-        )
-      );
-
-      loadStreetlights();
+    simulationRef.current = setInterval(() => {
+      streetlights.forEach((light) => {
+        action(light.id, "/simulate", {
+          method: "PUT",
+        });
+      });
     }, 5000);
   };
 
+  // ---------------- STOP SIMULATION ----------------
   const stopSimulation = () => {
     clearInterval(simulationRef.current);
     simulationRef.current = null;
@@ -164,10 +171,10 @@ function App() {
     return () => clearInterval(simulationRef.current);
   }, []);
 
+  // ---------------- UI ----------------
   return (
     <div className="app">
 
-      {/* HEADER */}
       <header>
         <h1>Smart Streetlight</h1>
         <p>Energy Conservation & Monitoring System</p>
@@ -175,8 +182,19 @@ function App() {
 
       <main>
 
+        {/* BACKEND STATUS */}
+        {backendError && (
+          <div className="backend-error">
+            <strong>Backend Connection Error</strong>
+            <p>{backendError}</p>
+            <button onClick={loadStreetlights}>
+              RETRY CONNECTION
+            </button>
+          </div>
+        )}
+
         {/* SIMULATION */}
-        <div className="simulation-control">
+        <section className="info simulation-control">
           <button onClick={startSimulation}>
             START AUTO SIMULATION
           </button>
@@ -188,18 +206,17 @@ function App() {
           <p>
             Simulation Status:{" "}
             <strong>
-              {simulationRunning
-                ? "RUNNING"
-                : "STOPPED"}
+              {simulationRunning ? "RUNNING" : "STOPPED"}
             </strong>
           </p>
-        </div>
+        </section>
 
         {/* DASHBOARD */}
         <section className="info">
           <h2>Dashboard</h2>
 
           <div className="cards">
+
             <div className="card">
               <h3>Total Streetlights</h3>
               <p>{totalLights}</p>
@@ -229,6 +246,7 @@ function App() {
               <h3>Energy Saved</h3>
               <p>{energySaved.toFixed(4)} kWh</p>
             </div>
+
           </div>
         </section>
 
@@ -237,6 +255,7 @@ function App() {
           <h2>Energy Saving Summary</h2>
 
           <div className="cards">
+
             <div className="card">
               <h3>Baseline Power</h3>
               <p>{baselinePower.toFixed(1)} W</p>
@@ -251,12 +270,12 @@ function App() {
               <h3>Power Saved</h3>
               <p>{powerSaved.toFixed(1)} W</p>
             </div>
+
           </div>
 
           <p>
-            Baseline assumes each non-faulty
-            streetlight operates at 100% brightness
-            using 45 W.
+            Baseline assumes each non-faulty streetlight operates
+            at 100% brightness using 45 W.
           </p>
         </section>
 
@@ -266,28 +285,24 @@ function App() {
 
           {powerHistory.length === 0 ? (
             <p>
-              Start the simulation to collect
-              power usage data.
+              Start the simulation to collect power usage data.
             </p>
           ) : (
-            <div className="chart">
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={powerHistory}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-
-                  <Line
-                    type="monotone"
-                    dataKey="power"
-                    name="Power Usage (W)"
-                    strokeWidth={3}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={powerHistory}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="time" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="power"
+                  name="Power Usage (W)"
+                  strokeWidth={3}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           )}
         </section>
 
@@ -297,28 +312,24 @@ function App() {
 
           {energyHistory.length === 0 ? (
             <p>
-              Start the simulation to collect
-              energy-saving data.
+              Start the simulation to collect energy-saving data.
             </p>
           ) : (
-            <div className="chart">
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={energyHistory}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-
-                  <Line
-                    type="monotone"
-                    dataKey="energy"
-                    name="Energy Saved (kWh)"
-                    strokeWidth={3}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={energyHistory}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="time" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="energy"
+                  name="Energy Saved (kWh)"
+                  strokeWidth={3}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           )}
         </section>
 
@@ -327,9 +338,14 @@ function App() {
           <h2>Streetlight Monitoring</h2>
 
           {streetlights.length === 0 ? (
-            <p>Loading streetlights...</p>
+            <p>
+              {backendError
+                ? "Unable to load streetlights."
+                : "Loading streetlights..."}
+            </p>
           ) : (
             <div className="table-container">
+
               <table>
                 <thead>
                   <tr>
@@ -345,8 +361,9 @@ function App() {
                 </thead>
 
                 <tbody>
-                  {streetlights.map(light => (
+                  {streetlights.map((light) => (
                     <tr key={light.id}>
+
                       <td>{light.id}</td>
 
                       <td>{light.location}</td>
@@ -360,18 +377,15 @@ function App() {
                       </td>
 
                       <td>
-                        {light.motion_detected
-                          ? "YES"
-                          : "NO"}
+                        {light.motion_detected ? "YES" : "NO"}
                       </td>
 
                       <td>
-                        {light.fault
-                          ? "FAULT"
-                          : "OK"}
+                        {light.fault ? "FAULT" : "OK"}
                       </td>
 
                       <td>
+
                         <button
                           onClick={() =>
                             updateLight(
@@ -453,7 +467,7 @@ function App() {
                           min="0"
                           max="100"
                           value={light.brightness}
-                          onChange={e =>
+                          onChange={(e) =>
                             updateLight(
                               light.id,
                               light.status,
@@ -461,11 +475,13 @@ function App() {
                             )
                           }
                         />
+
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+
             </div>
           )}
         </section>
